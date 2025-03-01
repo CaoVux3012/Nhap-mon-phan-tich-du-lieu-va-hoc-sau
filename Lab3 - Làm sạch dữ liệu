@@ -1,0 +1,63 @@
+import pandas as pd
+
+# Định nghĩa tên cột
+column_names = ["ID", "Name", "Age", "Weight", "m0006", "m0612", "m1218", "f0006", "f0612", "f1218"]
+
+# Đọc file CSV với tiêu đề cột tùy chỉnh, bỏ qua dòng lỗi
+df = pd.read_csv("patient_heart_rate.csv", names=column_names, on_bad_lines="skip", encoding="utf-8")
+
+# Hiển thị 5 dòng đầu tiên
+print(df.head())
+
+# Vấn đề 2: Tách cột Name thành Firstname và Lastname 
+df[['Firstname', 'Lastname']] = df['Name'].str.split(expand=True)
+df.drop(columns=['Name'], inplace=True)
+
+print(df)
+
+# Vấn đề 3: Chuyển đổi đơn vị cân nặng từ lbs sang kgs nếu có
+for i in range(len(df)):
+    x = str(df.loc[i, 'Weight'])  # Truy cập dữ liệu an toàn hơn
+    if "lbs" in x[-3:]:  
+        x = x[:-3]  
+        float_x = float(x)  
+        y = int(float_x / 2.2)  
+        y = str(y) + "kgs"  
+        df.loc[i, 'Weight'] = y  # Cập nhật đúng cách
+
+print(df)
+
+# Vấn đề 4: Xóa bỏ dòng dữ liệu rỗng NaN
+df.dropna(how="all", inplace=True)
+
+# Loại bỏ các dòng có 'Firstname' là 'UniLever' hoặc các giá trị không mong muốn khác
+df = df[df['Firstname'] != 'UniLever']
+
+#Vấn đề 5:
+df= df.drop_duplicates(subset=['Firstname', 'Lastname', 'Age', 'Weight'])
+print(df)
+#Vấn đề 6: Thay thế dữ liệu bị ảnh hưởng bởi lỗi non-ASCII, không định dạng ASCII bằng việc đánh dấu bằng một kí tự khác
+df.loc[:, 'Firstname'] = df['Firstname'].replace(r"[^\x00-\x7F]+", '', regex=True)
+df.loc[:, 'Lastname'] = df['Lastname'].replace(r"[^\x00-\x7F]+", '', regex=True)
+
+print(df)
+#Vấn đề 7: "missing values"
+df = df.drop_duplicates(subset=['Firstname', 'Lastname', 'Age', 'Weight'])
+print(df)
+
+#Vấn đề 8:
+df = pd.melt(df, id_vars=['ID', 'Age', 'Weight', 'Firstname', 'Lastname'],
+             value_name="Pulsarate", var_name="sex_and_time").sort_values(['ID', 'Age', 'Weight', 'Firstname', 'Lastname'])
+
+tmp_df = df["sex_and_time"].str.extract("(\D)(\d+)(\d{2})", expand=True)
+tmp_df.columns = ["Sex", "hours_lower", "hours_upper"]
+
+tmp_df["Time"] = tmp_df["hours_lower"] + "-" + tmp_df["hours_upper"]
+
+df = pd.concat([df, tmp_df], axis=1)
+
+df = df.drop(['sex_and_time', 'hours_lower', 'hours_upper'], axis=1)
+df = df.dropna()
+
+df.to_csv("outputcleanup.csv", index=False)
+print(df)
