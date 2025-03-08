@@ -1,0 +1,275 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+
+# 1. Viết hàm load_data() để tải dữ liệu lên ứng dụng
+def load_data(file_path="titanic_disaster.csv"):
+    data = pd.read_csv(file_path)
+    print("10 dòng đầu tiên của dữ liệu:")
+    print(data.head(10))
+    return data
+
+df = load_data()
+# 2. Thống kê dữ liệu thiếu và trực quan hóa bằng heat map
+def missing_data_analysis(df):
+    print("\nSố lượng giá trị thiếu trên từng cột:")
+    print(df.isnull().sum())
+
+    # Vẽ biểu đồ cột để trực quan hóa dữ liệu thiếu
+    missing_counts = df.isnull().sum()
+    missing_counts = missing_counts[missing_counts > 0]
+
+    plt.figure(figsize=(10,6))
+    missing_counts.plot(kind='bar', color='green')
+    plt.title('Số lượng giá trị thiếu trên từng cột')
+    plt.ylabel('Số lượng')
+    plt.xlabel('Cột dữ liệu')
+    plt.xticks(rotation=45)
+    plt.show()
+
+missing_data_analysis(df)
+
+# 3. Xử lý cột Name, tách thành firstName và secondName
+def process_name(data):
+    data_copy = data.copy()
+
+    # Tách họ và tên
+    # Giả định format: Last name, First name (Title)
+    data_copy['secondName'] = data_copy['Name'].apply(lambda x: x.split(',')[0].strip())
+    data_copy['firstName'] = data_copy['Name'].apply(lambda x: ' '.join(x.split(',')[1].split()[1:]).strip())
+
+    # Xóa cột Name
+    data_copy.drop('Name', axis=1, inplace=True)
+
+    print("\nDữ liệu sau khi tách cột Name:")
+    print(data_copy.head())
+
+    return data_copy
+
+df = process_name(df)
+
+# 4. Xử lý rút gọn kích thước dữ liệu trên cột Sex
+def process_sex(data):
+
+    data_copy = data.copy()
+    data_copy['Sex'] = data_copy['Sex'].replace({'male': 'M', 'female': 'F'})
+    
+    print("\nDữ liệu sau khi thay thế giá trị trong cột Sex:")
+    print(data_copy['Sex'].value_counts())
+    
+    return data_copy
+
+df = process_sex(df)
+
+# 5. Xử lý dữ liệu thiếu trên biến Age
+def process_missing_age(data):
+    data_copy = data.copy()
+    
+    # a. Vẽ biểu đồ Box plot để xác định phân phối tuổi theo từng hạng hành khách
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(x='Pclass', y='Age', data=data_copy)
+    plt.title('Phân phối tuổi theo hạng hành khách (Pclass)')
+    plt.xlabel('Hạng hành khách (Pclass)')
+    plt.ylabel('Tuổi (Age)')
+    plt.show()
+    
+    # Hiển thị thống kê tuổi trung bình theo từng hạng hành khách
+    age_means = data_copy.groupby('Pclass')['Age'].mean()
+    print("\nTuổi trung bình theo hạng hành khách:")
+    print(age_means)
+    
+    # Nhận xét về tuổi trung bình giữa các nhóm hành khách
+    print("\nNhận xét về tuổi trung bình giữa các nhóm hành khách:")
+    print("- Hạng 1 (Pclass=1): Có tuổi trung bình cao nhất")
+    print("- Hạng 3 (Pclass=3): Có tuổi trung bình thấp nhất")
+    print("- Có sự khác biệt đáng kể về tuổi giữa các hạng hành khách")
+    print("=> Quyết định: Thay thế giá trị Age bị thiếu theo từng nhóm hạng vé (Pclass)")
+    
+    # b. Tiến hành thay thế giá trị Age bị thiếu theo từng nhóm Pclass
+    for pclass in [1, 2, 3]:
+        mean_age = age_means[pclass]
+        data_copy.loc[(data_copy['Pclass'] == pclass) & (data_copy['Age'].isnull()), 'Age'] = mean_age
+    # Hiển thị kết quả dạng bảng
+    print("\nThống kê dữ liệu sau khi xử lý Age:")
+    print(data_copy['Age'].describe())
+    # Vẽ heat map để hiển thị dữ liệu thiếu sau khi xử lý
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(data_copy.isnull(), cbar=False, cmap='viridis', yticklabels=False)
+    plt.title('Trực quan hóa dữ liệu thiếu sau khi xử lý Age (Heat map)')
+    plt.tight_layout()
+    plt.show()
+    return data_copy
+df = process_missing_age(df)
+
+# 6. Xây dựng biến số Agegroup
+def create_age_group(data):
+    
+    data_copy = data.copy()
+    
+    # Tạo biến Agegroup dựa trên độ tuổi
+    conditions = [
+        (data_copy['Age'] <= 12),
+        (data_copy['Age'] > 12) & (data_copy['Age'] <= 18),
+        (data_copy['Age'] > 18) & (data_copy['Age'] <= 60),
+        (data_copy['Age'] > 60)
+    ]
+    
+    values = ['Kid', 'Teen', 'Adult', 'Older']
+    
+    data_copy['Agegroup'] = np.select(conditions, values, default='Unknown').astype(str)
+
+    print("\nPhân phối các nhóm tuổi:")
+    print(data_copy['Agegroup'].value_counts())
+    
+    return data_copy
+
+df = create_age_group(df)
+
+# 7. Thêm đặc trưng về danh xưng (namePrefix)
+def extract_name_prefix(data):
+   
+    data_copy = data.copy()
+    
+    def get_title(name):
+        pattern = r',\s*([^.]+)\.'
+        match = re.search(pattern, name)
+        if match:
+            return match.group(1).strip()
+        return ''
+    
+    if 'Name' not in data_copy.columns:
+        data_copy['Name'] = data_copy['secondName'] + ', ' + data_copy['firstName']
+    
+    data_copy['namePrefix'] = data_copy['Name'].apply(get_title)
+    
+    common_titles = ['Mr', 'Mrs', 'Miss', 'Master']
+    data_copy['namePrefix'] = data_copy['namePrefix'].apply(lambda x: x if x in common_titles else 'Other')
+    
+    # Xóa cột Name nếu đã tạo lại
+    if 'Name' in data_copy.columns and 'Name' not in data.columns:
+        data_copy.drop('Name', axis=1, inplace=True)
+    
+    print("\nPhân phối các danh xưng:")
+    print(data_copy['namePrefix'].value_counts())
+    
+    return data_copy
+
+df = extract_name_prefix(df)
+# 8. Khai thác thông tin số lượng thành viên đi theo nhóm thân quen (familySize)
+def calculate_family_size(data):
+    data_copy = data.copy()
+    
+    # Tính family size = 1 + SibSp + Parch
+    data_copy['familySize'] = 1 + data_copy['SibSp'] + data_copy['Parch']
+    
+    print("\nThống kê family size:")
+    print(data_copy['familySize'].describe())
+    print("\nPhân phối family size:")
+    print(data_copy['familySize'].value_counts().sort_index())
+    
+    return data_copy
+
+df = calculate_family_size(df)
+# 9. Tạo thêm đặc trưng 'Alone'
+def create_alone_feature(data):
+    data_copy = data.copy()
+    
+    # Tạo đặc trưng Alone: 1 nếu familySize = 1 (đi một mình), 0 nếu không
+    data_copy['Alone'] = (data_copy['familySize'] == 1).astype(int)
+    
+    print("\nPhân phối đặc trưng Alone:")
+    print(data_copy['Alone'].value_counts())
+    
+    return data_copy
+
+df = create_alone_feature(df)
+# 10. Tách loại cabin
+def extract_cabin_type(data):
+    data_copy = data.copy()
+    
+    # Thay thế giá trị NaN trong Cabin bằng "Unknown"
+    data_copy['Cabin'] = data_copy['Cabin'].fillna("Unknown")
+    
+    # Trích xuất loại cabin (chữ cái đầu tiên)
+    data_copy['typeCabin'] = data_copy['Cabin'].apply(lambda x: x[0] if x != "Unknown" else "Unknown")
+    
+    print("\nPhân phối các loại cabin:")
+    print(data_copy['typeCabin'].value_counts())
+    
+    return data_copy
+
+df = extract_cabin_type(df)
+# 11. Loại bỏ dữ liệu thừa đối với các hành khách xuất hiện trong cả 2 tập dữ liệu huấn luyện (train.csv) và đánh giá (test.csv). Ưu tiên giữ lại dữ liệu trong tập huấn luyện."
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+print(df.columns)  # Kiểm tra danh sách cột trong df
+print(df.head())   # Xem trước vài dòng đầu của dữ liệu
+
+bins = [0, 12, 18, 60, np.inf]
+labels = ['Kid', 'Teen', 'Adult', 'Older']
+df['AgeGroup'] = pd.cut(df['Age'], bins=bins, labels=labels)
+
+# Đảm bảo các cột cần mã hóa tồn tại trong dữ liệu
+df["Embarked"].fillna("Unknown", inplace=True)  # Xử lý giá trị thiếu nếu có
+
+# Mã hóa biến phân loại
+le = LabelEncoder()
+
+df["AgeGroup"] = le.fit_transform(df["AgeGroup"])
+df["namePrefix"] = le.fit_transform(df["namePrefix"])  # Sử dụng đúng tên cột đã tạo từ câu 7
+df["Embarked"] = le.fit_transform(df["Embarked"])
+df["Sex"] = le.fit_transform(df["Sex"])  # Chuyển đổi 'M' và 'F' thành số
+
+# Lựa chọn biến đầu vào (features) và nhãn (target)
+features = ["Pclass", "Sex", "Age", "Fare", "Embarked", "familySize", "AgeGroup", "namePrefix"]
+X = df[features]
+y = df["Survived"]
+
+# Chia dữ liệu thành tập train và test (80-20)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Chuẩn hóa dữ liệu
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)  # Áp dụng cùng scaler cho tập test
+
+print("Dữ liệu đã được mã hóa và chuẩn hóa thành công!")
+
+plt.figure(figsize=(6,4))
+sns.barplot(x='AgeGroup', y='Survived', data=df)
+plt.title('Tỉ lệ sống sót theo nhóm tuổi')
+plt.show()
+# 12. Trực quan hóa tỉ lệ sống sót theo giới tính
+plt.figure(figsize=(6,4))
+sns.barplot(x='Sex', y='Survived', data=df)
+plt.title('Tỉ lệ sống sót theo giới tính')
+plt.show()
+# 13. Trực quan hóa sống sót theo hạng vé
+plt.figure(figsize=(6,4))
+sns.barplot(x='Pclass', y='Survived', data=df)
+plt.title('Tỉ lệ sống sót theo hạng vé')
+plt.show()
+# 14. Sống sót theo giới tính và nhóm tuổi
+plt.figure(figsize=(8,6))
+sns.barplot(x='AgeGroup', y='Survived', hue='Sex', data=df)
+plt.title('Tỉ lệ sống sót theo nhóm tuổi và giới tính')
+plt.show()
+# 15. Xác suất sống sót dựa trên nhóm đi cùng
+plt.figure(figsize=(6,4))
+sns.barplot(x='familySize', y='Survived', data=df)
+plt.title('Xác suất sống sót theo số lượng người đi cùng')
+plt.show()
+# 16. Xác suất sống sót dựa trên giá vé
+plt.figure(figsize=(6,4))
+sns.histplot(df, x='Fare', hue='Survived', kde=True, bins=30)
+plt.title('Phân bố giá vé và khả năng sống sót')
+plt.show()
+# 17. Số người sống sót theo hạng vé và cảng lên tàu
+plt.figure(figsize=(8,6))
+sns.catplot(x='Pclass', hue='Survived', col='Embarked', kind='count', data=df)
+plt.show()
